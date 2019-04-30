@@ -6,8 +6,8 @@ b = 1.0;
 tol = 1E-14;
 num_steps = 10;
 alpha=2;
-n=4;
-mesh = UnitSquareMesh(20,20)
+n=2.5;
+mesh = UnitSquareMesh(30,30)
 V = FunctionSpace(mesh,"P",1)
 u_k = interpolate(Expression("3*x[0]-2",degree=1),V)
 u_ln = interpolate(Expression("3*x[0]-2",degree=1),V)
@@ -37,9 +37,8 @@ class NonLinearCoefficient(UserExpression):
     m = 1-1/n;
     alpha = alpha;
 
-    def __init__(self,initialGuess,**kwargs):
+    def __init__(self,**kwargs):
         super().__init__(**kwargs)
-        self.initialGuess = initialGuess
     
     @staticmethod
     def s(h):
@@ -86,15 +85,24 @@ class DerivativeNonLinearCoefficient(UserExpression):
         return (NonLinearCoefficient.s(h)**(1/2))*((1-(1-NonLinearCoefficient.s(h)**(1/NonLinearCoefficient.m))**NonLinearCoefficient.m)**2)
     @staticmethod
     def NumDiff(self, value, x, h):
-        #print(x) 
+        if (abs(x[0]+h) < 1 and abs(x[1]+h) <1):
+            p = Point(x[0]+h,x[1]+h)
+        else:
+            p = x
+        
+        if (abs(x[0]-h) < 1 and abs(x[1]-h)<1):
+            q = Point(x[0]-h,x[1]-h)
+        else:
+            q = x
+        u_k.set_allow_extrapolation(True)
         #print((NonLinearCoefficient.k_r(u_k(x))+NonLinearCoefficient.k_r(u_k(x)))/(2))
-        return (NonLinearCoefficient.k_r(u_k(x)-h)-NonLinearCoefficient.k_r(u_k(x)+h))/(2*h)
+        return (NonLinearCoefficient.k_r(u_k(p))-NonLinearCoefficient.k_r(u_k(q)))/(2*h)
     def eval(self, value, x):
         #print(x)
         if (u_k(x)) < 0:
            #print(u_k(x))
            #print(k_r(abs(u_k(x))))
-           value[0]= DerivativeNonLinearCoefficient.NumDiff(self,value,x,0.000001)
+           value[0]= DerivativeNonLinearCoefficient.NumDiff(self,value,x,0.0000001)
         else:
            value[0]= 0
     
@@ -106,76 +114,44 @@ vtkfile = File('resultsNewton/solution.pvd')
 vtkfile << (u_k,0)
 iter = 0;
 innerIter = 0;
-maxIters = 30;
-maxInnerIters = 10;
+maxIters = 20;
+maxInnerIters = 20;
 loopTol = 1.0E-2
 eps=1
 eps2 = 1
-omega = 0.5;
-
-innerLoopTol = 150
-
+omega = 0.2;
+time = 0;
 while iter < maxIters and eps > loopTol:
     iter += 1
-# Define Variational Problem
-    u = Function(V)
+
     du = TrialFunction(V)
     v = TestFunction(V)
-    g = NonLinearCoefficient(degree=2,element = V.ufl_element(),initialGuess=2)
-    g_u = DerivativeNonLinearCoefficient(degree=2,element=V.ufl_element())
-    #print(g_u(1/2,1/2))
-#    g_u = diff(g,u)
-#    g_u = g_u*dx(mesh)
-    #grad_u = project(grad(u_k),VectorFunctionSpace(mesh,'P',2))
-    #g_u = project(g_u,FunctionSpace(mesh,'P',1))
-    a = dot(g*grad(du),grad(v))*dx + dot(g_u*du*grad(u_k),grad(v))*dx
-    #a = dot(g*grad(du),grad(v))*dx + dot(g_u*du*grad_u,grad(v))*dx
+    g = NonLinearCoefficient(degree=2,element=V.ufl_element())
+    g_p = DerivativeNonLinearCoefficient(degree=2,element=V.ufl_element())
+    #grad_uk = project(grad(u_k),VectorFunctionSpace(mesh,'Lagrange',1))
+    a = dot((g+g_p)*grad(du),grad(v))*dx
+    L = -dot((g+g_p)*grad(u_k),grad(v))*dx 
     du = Function(V)
-    f = Constant(0.0)
-    L = -dot(g*grad(u_k),grad(v))*dx 
-    #L = -dot(g*grad_u,grad(v))*dx 
-    solve(a==L,du,DirichletBC(V,Constant(0.0),boundary_W)
-)
+    solve(a==L,du,DirichletBC(V,Constant(0.0),boundary_W))
+    eps = np.linalg.norm(du.vector(),ord=np.inf)        
+    #print ('outer norm:%g'% eps)
+    while eps2 > loopTol and innerIter < 10:
+        innerIter += 1
+        du = TrialFunction(V)
+        a = dot((g+g_p)*grad((omega**(-innerIter))*du),grad(v))*dx
+        du = Function(V)
+        #grad_uk = project(grad(u_k),VectorFunctionSpace(mesh,'Lagrange',1))
+        #g_p = project(g_p,FunctionSpace(mesh,'Lagrange',1))
+        solve(a==L, du, DirichletBC(V,Constant(0.0),boundary_W))
+        eps2 = np.linalg.norm(du.vector(),ord=np.inf)
+        print ('inner Norm:%g'% eps2)
+        u_k.assign(u_k+du)
+        time +=1
+        vtkfile << (u_k,time)
     
-    vertex_values_u_k = u_k.compute_vertex_values(mesh)
-    #print(vertex_values_u_k)
-    #print(vertex_values_u)
-    #u.vector()[:] = u_k.vector() + du.vector()
-    u.assign(u_k+du)
-    vertex_values_u = u.compute_vertex_values(mesh)
-    eps = np.linalg.norm(np.abs(vertex_values_u_k - vertex_values_u),ord=2)
-    deps = np.linalg.norm(du.vector(), ord=np.Inf)
-    print('norm=%g,u_k+1(0.3,0.3)=%g, u_k(0.3,0.3)=%g'%(eps,u(0.3,0.3),u_k(0.3,0.3)))
-    u_k.assign(u)
-    u_ln.assign(u)
-   
-    while eps2 > innerLoopTol and innerIter < maxInnerIters:
-        innerIter +=1
-    #print('iter=%d:norm=%g' % (iter,eps))
-        #u.vector()[:] = u_k.vector() + (omega**innerIter)*du.vector()
-
-    #print(vertex_values_u_k)
-    #    u_ln.assign(u)
-        #grad_u = project(grad(u_ln),VectorFunctionSpace(mesh,'P',2))
-        g_u = project(g_u,FunctionSpace(mesh,'P',2))
-        du=TrialFunction(V)
-        a = dot(g*grad(du),grad(v))*dx + dot(g_u*du*grad(u_ln),grad(v))*dx
-        L = -dot(g*grad(u_ln),grad(v))*dx
-        du=Function(V)
-        solve(a==L,du,DirichletBC(V,Constant(0.0),boundary_W))
-        eps1 = np.linalg.norm(du.vector(),ord=2)
-        
-        error_max = np.abs(u_k.compute_vertex_values(mesh) - u_ln.compute_vertex_values(mesh)) 
-        eps2 = np.linalg.norm(error_max, ord=2)
-        #print(du.vector())
-        print('inner eps=%g, inner eps2=%g' % (eps1,eps2))
-        u_ln.assign(u_k + (omega**innerIter)*du)
-    innerIter = 0;
-    u_k.assign(u_ln)
-    #print(u_k.compute_vertex_values(mesh))
-    
-    vtkfile << (u_k,iter)
-
-
-
-
+    innerIter = 0
+    eps2 = 1
+    u_k.assign(u_k+du)
+    time += 1
+    print('outer norm:%g' % eps)
+    vtkfile << (u_k,time)

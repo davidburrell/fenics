@@ -1,8 +1,7 @@
 from fenics import *
 
 class NonLinearCoefficient(UserExpression):
-    def eval(self, value, x):
-        #value[0] = 2*self.u_k(x)
-        value[0] = 2
-    def value_shape(self):
-        return (0,)
+    def __init__(self, f, **kwargs):
+        super().__init__(**kwargs)
+    def eval(self, value, x)
+
