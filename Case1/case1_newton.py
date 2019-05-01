@@ -53,10 +53,7 @@ class NonLinearCoefficient(UserExpression):
         return (NonLinearCoefficient.s(h)**(1/2))*((1-(1-NonLinearCoefficient.s(h)**(1/NonLinearCoefficient.m))**NonLinearCoefficient.m)**2)
 
     def eval(self, value, x):
-        #print(x)
         if (u_k(x)) < 0:
-           #print(u_k(x))
-           #print(k_r(abs(u_k(x))))
            value[0]= NonLinearCoefficient.k_r(u_k(x))
         else:
            value[0]= 1
@@ -74,35 +71,20 @@ class DerivativeNonLinearCoefficient(UserExpression):
     
     @staticmethod
     def s(h):
-    #parameterization of saturation van Genuchten
         if h < 0:
-             return (1+(NonLinearCoefficient.alpha*abs(h))**(NonLinearCoefficient.n))**(-NonLinearCoefficient.m)
+             return (1+(DerivativeNonLinearCoefficient.alpha*abs(h))**(DerivativeNonLinearCoefficient.n))**(-DerivativeNonLinearCoefficient.m)
         else:
             return 1 
     
     @staticmethod
     def k_r(h):
-        return (NonLinearCoefficient.s(h)**(1/2))*((1-(1-NonLinearCoefficient.s(h)**(1/NonLinearCoefficient.m))**NonLinearCoefficient.m)**2)
+        return (DerivativeNonLinearCoefficient.s(h)**(1/2))*((1-(1-DerivativeNonLinearCoefficient.s(h)**(1/DerivativeNonLinearCoefficient.m))**DerivativeNonLinearCoefficient.m)**2)
     @staticmethod
-    def NumDiff(self, value, x, h):
-        if (abs(x[0]+h) < 1 and abs(x[1]+h) <1):
-            p = Point(x[0]+h,x[1]+h)
-        else:
-            p = x
-        
-        if (abs(x[0]-h) < 1 and abs(x[1]-h)<1):
-            q = Point(x[0]-h,x[1]-h)
-        else:
-            q = x
-        u_k.set_allow_extrapolation(True)
-        #print((NonLinearCoefficient.k_r(u_k(x))+NonLinearCoefficient.k_r(u_k(x)))/(2))
-        return (NonLinearCoefficient.k_r(u_k(p))-NonLinearCoefficient.k_r(u_k(q)))/(2*h)
+    def NumDiff(self,value,x,h):
+        return (DerivativeNonLinearCoefficient.k_r(u_k(x)+h)-DerivativeNonLinearCoefficient.k_r(u_k(x)))/(h)
     def eval(self, value, x):
-        #print(x)
         if (u_k(x)) < 0:
-           #print(u_k(x))
-           #print(k_r(abs(u_k(x))))
-           value[0]= DerivativeNonLinearCoefficient.NumDiff(self,value,x,0.0000001)
+           value[0]= DerivativeNonLinearCoefficient.NumDiff(self,value,x,0.00000001)
         else:
            value[0]= 0
     
@@ -119,7 +101,7 @@ maxInnerIters = 20;
 loopTol = 1.0E-2
 eps=1
 eps2 = 1
-omega = 0.2;
+omega = 0.5;
 time = 0;
 while iter < maxIters and eps > loopTol:
     iter += 1
@@ -128,20 +110,16 @@ while iter < maxIters and eps > loopTol:
     v = TestFunction(V)
     g = NonLinearCoefficient(degree=2,element=V.ufl_element())
     g_p = DerivativeNonLinearCoefficient(degree=2,element=V.ufl_element())
-    #grad_uk = project(grad(u_k),VectorFunctionSpace(mesh,'Lagrange',1))
     a = dot((g+g_p)*grad(du),grad(v))*dx
-    L = -dot((g+g_p)*grad(u_k),grad(v))*dx 
+    L = -dot((g+g_p)*grad(u_k),grad(v))*dx
     du = Function(V)
     solve(a==L,du,DirichletBC(V,Constant(0.0),boundary_W))
     eps = np.linalg.norm(du.vector(),ord=np.inf)        
-    #print ('outer norm:%g'% eps)
     while eps2 > loopTol and innerIter < 10:
         innerIter += 1
         du = TrialFunction(V)
         a = dot((g+g_p)*grad((omega**(-innerIter))*du),grad(v))*dx
         du = Function(V)
-        #grad_uk = project(grad(u_k),VectorFunctionSpace(mesh,'Lagrange',1))
-        #g_p = project(g_p,FunctionSpace(mesh,'Lagrange',1))
         solve(a==L, du, DirichletBC(V,Constant(0.0),boundary_W))
         eps2 = np.linalg.norm(du.vector(),ord=np.inf)
         print ('inner Norm:%g'% eps2)
