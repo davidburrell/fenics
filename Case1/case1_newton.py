@@ -96,9 +96,9 @@ vtkfile = File('resultsNewton/solution.pvd')
 vtkfile << (u_k,0)
 iter = 0;
 innerIter = 0;
-maxIters = 20;
+maxIters = 200;
 maxInnerIters = 20;
-loopTol = 1.0E-2
+loopTol = 1.0E-4
 eps=1
 eps2 = 1
 omega = 0.5;
@@ -115,21 +115,28 @@ while iter < maxIters and eps > loopTol:
     du = Function(V)
     solve(a==L,du,DirichletBC(V,Constant(0.0),boundary_W))
     eps = np.linalg.norm(du.vector(),ord=np.inf)        
-    while eps2 > loopTol and innerIter < 10:
+    print('outer norm:%g' %eps)
+    while innerIter < maxInnerIters:
         innerIter += 1
         du = TrialFunction(V)
         a = dot((g+g_p)*grad((omega**(-innerIter))*du),grad(v))*dx
         du = Function(V)
         solve(a==L, du, DirichletBC(V,Constant(0.0),boundary_W))
         eps2 = np.linalg.norm(du.vector(),ord=np.inf)
-        print ('inner Norm:%g'% eps2)
-        u_k.assign(u_k+du)
-        time +=1
-        vtkfile << (u_k,time)
+    #    print ('inner Norm:%g'% eps2)
+        if eps2 < eps:
+            u_k.assign(u_k+du)
+            time +=1
+            vtkfile << (u_k,time)
+            break
+        
+            
     
     innerIter = 0
+    print('iteration: %d'%iter)
+    eps = eps2
     eps2 = 1
-    u_k.assign(u_k+du)
-    time += 1
-    print('outer norm:%g' % eps)
-    vtkfile << (u_k,time)
+    #u_k.assign(u_k+du)
+    #time += 1
+    #print('outer norm:%g' % eps)
+    #vtkfile << (u_k,time)
